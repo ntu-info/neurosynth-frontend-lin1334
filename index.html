@@ -4,7 +4,179 @@
   <meta charset="UTF-8" />
   <title>Tren NeuroLex Explorer</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tren NeuroLex Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+  <!-- Navbar -->
+  <nav class="bg-indigo-600 text-white p-4 shadow flex items-center gap-2">
+    <i class="bi bi-brain text-2xl"></i>
+    <h1 class="text-xl font-semibold">Tren NeuroLex Explorer</h1>
+  </nav>
+
+  <main class="max-w-6xl mx-auto p-6 space-y-8">
+    <!-- Query Search -->
+    <section>
+      <h2 class="text-lg font-semibold mb-2 flex items-center gap-2">
+        <i class="bi bi-search"></i> Search Studies
+      </h2>
+      <div class="flex gap-2">
+        <input id="queryInput" class="flex-1 border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-400" placeholder="Example: amygdala not emotion" />
+        <button id="queryBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg"><i class="bi bi-search"></i> Go</button>
+      </div>
+      <div id="studiesSection" class="hidden mt-4">
+        <h3 class="font-semibold mb-2">Study Results</h3>
+        <div id="studies" class="border border-gray-200 rounded-lg p-4 bg-white text-sm space-y-2 max-h-[70vh] overflow-y-scroll"></div>
+      </div>
+    </section>
+
+    <!-- Terms Browser -->
+    <section>
+      <h2 class="text-lg font-semibold mb-2 flex items-center gap-2">
+        <i class="bi bi-journal-text"></i> All Terms
+      </h2>
+      <div class="flex gap-2 mb-2">
+        <input id="searchInput" type="text" class="flex-1 border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-400" placeholder="Type to search terms (e.g., amygdala, cortex...)" />
+        <button id="clearBtn" class="bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded-lg"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div id="termsList" class="border border-gray-200 rounded-lg p-4 bg-white max-h-[60vh] overflow-y-scroll grid grid-cols-2 md:grid-cols-4 gap-1 text-sm">
+        <p class="col-span-full text-gray-500">Loading terms...</p>
+      </div>
+    </section>
+
+    <!-- Related Terms -->
+    <section id="relatedSection" class="hidden">
+      <h2 class="text-lg font-semibold mb-2">
+        <i class="bi bi-diagram-3"></i> Related Terms for <span id="currentTerm" class="font-bold text-indigo-700"></span>
+      </h2>
+      <div id="related" class="border border-gray-200 rounded-lg p-4 bg-white text-sm grid grid-cols-2 md:grid-cols-3 gap-1"></div>
+    </section>
+  </main>
+
+  <script>
+    const BASE = "https://mil.psy.ntu.edu.tw:5000";
+    let allTerms = [];
+    let fuse;
+
+    // === Fetch Terms ===
+    async function fetchTerms() {
+      const out = document.getElementById("termsList");
+      out.innerHTML = "<p class='col-span-full text-gray-500'>Fetching terms…</p>";
+      try {
+        const resp = await fetch(`${BASE}/terms`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        allTerms = data.terms;
+        fuse = new Fuse(allTerms, { threshold: 0.3 });
+        renderTerms(allTerms.slice(0, 500));
+      } catch (err) {
+        out.innerHTML = `<p class='text-red-500'>Error: ${err.message}</p>`;
+      }
+    }
+
+    // === Render Terms ===
+    function renderTerms(terms) {
+      const out = document.getElementById("termsList");
+      out.innerHTML = "";
+      if (!terms.length) {
+        out.innerHTML = "<p class='col-span-full text-gray-500'>No terms found.</p>";
+        return;
+      }
+      terms.forEach(t => {
+        const btn = document.createElement("button");
+        btn.textContent = t;
+        btn.className = "px-2 py-1 rounded text-left hover:bg-indigo-100 text-indigo-700 truncate";
+        btn.title = t;
+        btn.onclick = () => showRelated(t);
+        out.appendChild(btn);
+      });
+    }
+
+    // === Show Related Terms ===
+    async function showRelated(term) {
+      const sec = document.getElementById("relatedSection");
+      const relDiv = document.getElementById("related");
+      document.getElementById("currentTerm").textContent = term;
+      sec.classList.remove("hidden");
+      relDiv.innerHTML = "<p class='col-span-full text-gray-500'>Loading related terms…</p>";
+
+      try {
+        const resp = await fetch(`${BASE}/terms/${encodeURIComponent(term)}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        relDiv.innerHTML = "";
+        data.related.slice(0, 50).forEach(r => {
+          const tag = document.createElement("span");
+          tag.className = "bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded px-2 py-1 cursor-pointer";
+          tag.textContent = `${r.term} (${r.jaccard.toFixed(2)})`;
+          tag.onclick = () => showRelated(r.term);
+          relDiv.appendChild(tag);
+        });
+      } catch (err) {
+        relDiv.innerHTML = `<p class='text-red-500'>Error: ${err.message}</p>`;
+      }
+    }
+
+    // === Logical Study Search ===
+    async function searchStudies() {
+      const q = document.getElementById("queryInput").value.trim();
+      if (!q) return;
+      const sec = document.getElementById("studiesSection");
+      const list = document.getElementById("studies");
+      sec.classList.remove("hidden");
+      list.innerHTML = "<p class='text-gray-500'>Searching…</p>";
+
+      try {
+        const resp = await fetch(`${BASE}/query/${encodeURIComponent(q)}/studies`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        list.innerHTML = `<p class='text-gray-600 mb-2'>Found ${data.count} studies</p>`;
+        data.results.slice(0, 50).forEach(st => {
+          const div = document.createElement("div");
+          div.className = "border-b pb-2";
+          div.innerHTML = `
+            <p class="font-semibold">${st.title}</p>
+            <p class="text-gray-600">${st.authors} (${st.year})</p>
+            <p class="text-gray-500 italic">${st.journal}</p>
+          `;
+          list.appendChild(div);
+        });
+      } catch (err) {
+        list.innerHTML = `<p class='text-red-500'>Error: ${err.message}</p>`;
+      }
+    }
+
+    // === Event Listeners ===
+    document.getElementById("queryBtn").addEventListener("click", searchStudies);
+    document.getElementById("searchInput").addEventListener("input", e => {
+      const q = e.target.value.trim();
+      if (!q) {
+        renderTerms(allTerms.slice(0, 500));
+        return;
+      }
+      const results = fuse.search(q, { limit: 500 }).map(r => r.item);
+      renderTerms(results);
+    });
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      document.getElementById("searchInput").value = "";
+      renderTerms(allTerms.slice(0, 500));
+    });
+
+    // === Init ===
+    fetchTerms();
+  </script>
+</body>
+</html>
+
     rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
   />
